@@ -79,6 +79,16 @@ function sanitizeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
 }
 
+function supabaseMessage(error: unknown, fallback: string) {
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return fallback;
+}
+
 function Sidebar({ open, setOpen }: { open: boolean; setOpen: (open: boolean) => void }) {
   const nav = [
     ["Dashboard", PawPrint, "#dashboard"],
@@ -350,24 +360,67 @@ export default function Home() {
   const [selectedPetId, setSelectedPetId] = useState("");
   const { theme, setTheme } = useTheme();
 
-  const refreshData = useCallback(async (client: Supabase, ownerId: string) => {
+  const ensureOwnerProfile = useCallback(async (client: Supabase, ownerId: string, email?: string | null) => {
+    const { data, error } = await client.from("profiles").select("id").eq("id", ownerId).maybeSingle();
+    if (error) {
+      setNotice(`Profile check failed: ${supabaseMessage(error, "Could not verify your owner profile.")}`);
+      return "failed";
+    }
+
+    if (data?.id) {
+      return "ready";
+    }
+
+    const repaired = await client.from("profiles").upsert({ id: ownerId, full_name: email ?? null });
+    if (repaired.error) {
+      setNotice(`Profile repair failed: ${supabaseMessage(repaired.error, "Could not create your owner profile.")}`);
+      return "failed";
+    }
+
+    setNotice("Profile missing and repaired. Your dashboard is ready.");
+    return "repaired";
+  }, []);
+
+  const refreshData = useCallback(async (client: Supabase, ownerId: string, successNotice: string | null = "Owner records loaded.") => {
     setLoadingData(true);
-    const [petsResult, documentsResult, recordsResult] = await Promise.all([
-      client.from("pets").select("*").eq("owner_id", ownerId).order("created_at", { ascending: false }),
-      client.from("documents").select("*").eq("owner_id", ownerId).order("created_at", { ascending: false }),
-      client.from("timeline_records").select("*").eq("owner_id", ownerId).order("occurred_on", { ascending: false })
-    ]);
+    try {
+      const [petsResult, documentsResult, recordsResult] = await Promise.all([
+        client.from("pets").select("*").eq("owner_id", ownerId).order("created_at", { ascending: false }),
+        client.from("documents").select("*").eq("owner_id", ownerId).order("created_at", { ascending: false }),
+        client.from("timeline_records").select("*").eq("owner_id", ownerId).order("occurred_on", { ascending: false })
+      ]);
 
-    if (petsResult.error) throw petsResult.error;
-    if (documentsResult.error) throw documentsResult.error;
-    if (recordsResult.error) throw recordsResult.error;
+      const failures = [
+        petsResult.error ? `pets: ${supabaseMessage(petsResult.error, "Could not load pets.")}` : null,
+        documentsResult.error ? `documents: ${supabaseMessage(documentsResult.error, "Could not load documents.")}` : null,
+        recordsResult.error ? `timeline: ${supabaseMessage(recordsResult.error, "Could not load timeline records.")}` : null
+      ].filter(Boolean);
 
-    const nextPets = petsResult.data ?? [];
-    setPets(nextPets);
-    setDocuments(documentsResult.data ?? []);
-    setRecords(recordsResult.data ?? []);
-    setSelectedPetId((current) => current || nextPets[0]?.id || "");
-    setLoadingData(false);
+      if (petsResult.error) setPets([]);
+      else {
+        const nextPets = petsResult.data ?? [];
+        setPets(nextPets);
+        setSelectedPetId((current) => current || nextPets[0]?.id || "");
+      }
+
+      setDocuments(documentsResult.error ? [] : documentsResult.data ?? []);
+      setRecords(recordsResult.error ? [] : recordsResult.data ?? []);
+
+      if (failures.length) {
+        setNotice(`Record loading failed: ${failures.join(" | ")}`);
+        return false;
+      }
+
+      if (successNotice) {
+        setNotice(successNotice);
+      }
+      return true;
+    } catch (error) {
+      setNotice(`Record loading failed: ${supabaseMessage(error, "Could not load owner records.")}`);
+      return false;
+    } finally {
+      setLoadingData(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -383,11 +436,9 @@ export default function Home() {
       if (!mounted) return;
       setSession(data.session);
       if (data.session) {
-        try {
-          await client.from("profiles").upsert({ id: data.session.user.id, full_name: data.session.user.email ?? null });
-          await refreshData(client, data.session.user.id);
-        } catch (error) {
-          setNotice(error instanceof Error ? error.message : "Could not load owner records.");
+        const profileStatus = await ensureOwnerProfile(client, data.session.user.id, data.session.user.email);
+        if (profileStatus !== "failed") {
+          await refreshData(client, data.session.user.id, profileStatus === "repaired" ? "Profile missing and repaired. Owner records loaded." : "Owner records loaded.");
         }
       }
     }
@@ -396,7 +447,12 @@ export default function Home() {
     const { data: listener } = client.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       if (nextSession) {
-        void refreshData(client, nextSession.user.id);
+        void (async () => {
+          const profileStatus = await ensureOwnerProfile(client, nextSession.user.id, nextSession.user.email);
+          if (profileStatus !== "failed") {
+            await refreshData(client, nextSession.user.id, profileStatus === "repaired" ? "Profile missing and repaired. Owner records loaded." : "Owner records loaded.");
+          }
+        })();
       } else {
         setPets([]);
         setDocuments([]);
@@ -409,7 +465,7 @@ export default function Home() {
       mounted = false;
       listener.subscription.unsubscribe();
     };
-  }, [refreshData, supabase]);
+  }, [ensureOwnerProfile, refreshData, supabase]);
 
   async function withOwner(action: (client: Supabase, ownerId: string) => Promise<void>) {
     if (!supabase || !session) {
@@ -418,10 +474,14 @@ export default function Home() {
     }
     setSaving(true);
     try {
+      const profileStatus = await ensureOwnerProfile(supabase, session.user.id, session.user.email);
+      if (profileStatus === "failed") {
+        return;
+      }
       await action(supabase, session.user.id);
-      await refreshData(supabase, session.user.id);
+      await refreshData(supabase, session.user.id, null);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Something went wrong.");
+      setNotice(supabaseMessage(error, "Something went wrong."));
     } finally {
       setSaving(false);
     }
@@ -444,8 +504,8 @@ export default function Home() {
         care_notes: emptyToNull(formData.get("careNotes"))
       };
       const { error } = await client.from("pets").insert(payload);
-      if (error) throw error;
-      setNotice(`${payload.name} was added to your private pet profiles.`);
+      if (error) throw new Error(`Pet save failed: ${supabaseMessage(error, "Could not save pet profile.")}`);
+      setNotice(`Pet save succeeded: ${payload.name} was added to your private pet profiles.`);
     });
   }
 
@@ -458,7 +518,7 @@ export default function Home() {
       for (const file of files) {
         const storagePath = `${ownerId}/${petId}/${Date.now()}-${sanitizeFileName(file.name)}`;
         const upload = await client.storage.from(documentBucket).upload(storagePath, file, { upsert: false, contentType: file.type || "application/octet-stream" });
-        if (upload.error) throw upload.error;
+        if (upload.error) throw new Error(`Document upload failed: ${supabaseMessage(upload.error, "Could not upload document.")}`);
         const insert = await client.from("documents").insert({
           owner_id: ownerId,
           pet_id: petId,
@@ -467,7 +527,7 @@ export default function Home() {
           mime_type: file.type || "application/octet-stream",
           status: "uploaded"
         });
-        if (insert.error) throw insert.error;
+        if (insert.error) throw new Error(`Document save failed: ${supabaseMessage(insert.error, "Could not save document metadata.")}`);
       }
       setNotice(`${files.length} document${files.length === 1 ? "" : "s"} uploaded to the private vault.`);
     });
@@ -491,7 +551,7 @@ export default function Home() {
         provider_name: emptyToNull(formData.get("providerName")),
         notes: emptyToNull(formData.get("notes"))
       });
-      if (error) throw error;
+      if (error) throw new Error(`Timeline save failed: ${supabaseMessage(error, "Could not save timeline record.")}`);
       setNotice(`${title} was added to the medical timeline.`);
     });
   }
