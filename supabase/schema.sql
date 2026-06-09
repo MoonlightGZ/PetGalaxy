@@ -5,6 +5,8 @@ create type public.pet_species as enum ('Dog', 'Cat', 'Bird', 'Reptile', 'Amphib
 create type public.timeline_category as enum ('vaccine', 'surgery', 'diagnostic', 'medication', 'visit', 'note');
 create type public.document_status as enum ('uploaded', 'processing', 'needs_review', 'complete', 'failed');
 
+grant usage on schema public to anon, authenticated;
+
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text,
@@ -82,6 +84,12 @@ alter table public.pets enable row level security;
 alter table public.pet_media enable row level security;
 alter table public.documents enable row level security;
 alter table public.timeline_records enable row level security;
+
+grant select, insert, update, delete on table public.profiles to anon, authenticated;
+grant select, insert, update, delete on table public.pets to anon, authenticated;
+grant select, insert, update, delete on table public.pet_media to anon, authenticated;
+grant select, insert, update, delete on table public.documents to anon, authenticated;
+grant select, insert, update, delete on table public.timeline_records to anon, authenticated;
 
 create policy "profiles are self-owned" on public.profiles for all using (auth.uid() = id) with check (auth.uid() = id);
 create policy "pets are owner scoped" on public.pets for all using (auth.uid() = owner_id) with check (auth.uid() = owner_id);

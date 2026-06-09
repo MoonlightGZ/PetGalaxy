@@ -11,6 +11,10 @@
   --border: rgba(15, 23, 42, 0.1);
   --primary: #2563eb;
   --secondary: #7c3aed;
+  --select-bg: rgba(255, 255, 255, 0.98);
+  --select-fg: #07111f;
+  --select-option-bg: #ffffff;
+  --select-option-fg: #07111f;
 }
 
 .dark {
@@ -22,6 +26,10 @@
   --border: rgba(148, 163, 184, 0.16);
   --primary: #60a5fa;
   --secondary: #a78bfa;
+  --select-bg: rgba(15, 23, 42, 0.94);
+  --select-fg: #f8fafc;
+  --select-option-bg: #0f172a;
+  --select-option-fg: #f8fafc;
 }
 
 * { box-sizing: border-box; }
@@ -46,6 +54,28 @@ body {
 .focus-ring:focus-visible {
   outline: 3px solid rgba(96, 165, 250, 0.7);
   outline-offset: 3px;
+}
+
+select {
+  background-color: var(--select-bg);
+  color: var(--select-fg);
+}
+
+select option {
+  background-color: var(--select-option-bg);
+  color: var(--select-option-fg);
+}
+
+.dark select option {
+  background-color: var(--select-option-bg);
+  color: var(--select-option-fg);
+}
+
+select option:checked,
+select option:hover,
+select option:focus {
+  background-color: var(--select-option-bg);
+  color: var(--select-option-fg);
 }
 
 @media (prefers-reduced-motion: reduce) {

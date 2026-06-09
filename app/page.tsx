@@ -29,7 +29,7 @@ import {
   X
 } from "lucide-react";
 import { AuthPanel } from "@/components/auth-panel";
-import { Badge, Button, Card, Field, inputClass } from "@/components/ui";
+import { Badge, Button, Card, Field, inputClass, selectClass } from "@/components/ui";
 import { breedsForSpecies } from "@/lib/breeds";
 import { speciesOptions } from "@/lib/constants";
 import type { Database } from "@/lib/database.types";
@@ -89,55 +89,64 @@ function supabaseMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function isPermissionDenied(error: unknown) {
+  return supabaseMessage(error, "").toLowerCase().includes("permission denied");
+}
+
+function missingGrantMessage(tableName: string) {
+  return `Supabase permissions are missing for the ${tableName} table. Apply supabase/schema.sql, then try again.`;
+}
+
 function Sidebar({ open, setOpen }: { open: boolean; setOpen: (open: boolean) => void }) {
   const nav = [
-    ["Dashboard", PawPrint, "#dashboard"],
+    ["Owner Home", PawPrint, "#dashboard"],
     ["Pet Profiles", Dog, "#pet-profiles"],
     ["Document Vault", FileHeart, "#document-vault"],
-    ["Timeline", Bell, "#timeline"],
+    ["Care Timeline", Bell, "#timeline"],
     ["Export Center", Download, "#export-center"],
-    ["Settings", Settings, "#settings"]
+    ["Launch Notes", Settings, "#settings"]
   ] as const;
 
   return (
-    <aside className={`fixed inset-y-0 left-0 z-40 w-80 border-r border-white/10 bg-slate-950/95 p-4 text-white shadow-2xl backdrop-blur-2xl transition lg:sticky lg:top-0 lg:h-screen ${open ? "translate-x-0" : "-translate-x-full lg:translate-x-0 lg:w-24"}`}>
+    <aside className={`fixed inset-y-0 left-0 z-40 w-80 border-r border-slate-200/80 bg-white/90 p-4 text-slate-950 shadow-2xl backdrop-blur-2xl transition dark:border-white/10 dark:bg-slate-950/95 dark:text-white lg:sticky lg:top-0 lg:h-screen ${open ? "translate-x-0" : "-translate-x-full lg:translate-x-0 lg:w-24"}`}>
       <div className="flex items-center justify-between">
         <a className="flex items-center gap-3" href="#dashboard" onClick={() => setOpen(false)}>
           <span className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-blue-500 to-violet-500"><PawPrint /></span>
-          {open ? <span><strong className="block text-lg">PetGalaxy</strong><small className="text-blue-200">Medical Hub</small></span> : null}
+          {open ? <span><strong className="block text-lg">PetGalaxy</strong><small className="text-blue-600 dark:text-blue-200">Medical Hub</small></span> : null}
         </a>
-        <button className="focus-ring rounded-xl p-2 hover:bg-white/10" onClick={() => setOpen(!open)} aria-label="Toggle sidebar">
+        <button className="focus-ring rounded-xl p-2 hover:bg-slate-900/5 dark:hover:bg-white/10" onClick={() => setOpen(!open)} aria-label="Toggle sidebar">
           <Menu className="h-5 w-5" />
         </button>
       </div>
       <nav className="mt-8 grid gap-2">
         {nav.map(([label, Icon, href], index) => (
-          <a key={label} href={href} onClick={() => setOpen(false)} className={`focus-ring flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold transition hover:bg-white/10 ${index === 0 ? "bg-white/15" : ""}`}>
+          <a key={label} href={href} onClick={() => setOpen(false)} className={`focus-ring flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold transition hover:bg-slate-900/5 dark:hover:bg-white/10 ${index === 0 ? "bg-slate-900/5 dark:bg-white/10" : ""}`}>
             <Icon className="h-5 w-5 shrink-0" />
             {open ? label : null}
           </a>
         ))}
       </nav>
       {open ? (
-        <div className="mt-8 rounded-3xl border border-white/10 bg-white/10 p-4">
-          <ShieldCheck className="mb-3 text-blue-200" />
+        <div className="mt-8 rounded-3xl border border-slate-200/80 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/10">
+          <ShieldCheck className="mb-3 text-blue-600 dark:text-blue-200" />
           <p className="text-sm font-bold">Private by default</p>
-          <p className="mt-1 text-xs text-slate-300">Supabase RLS and private Storage policies scope every record to the signed-in owner.</p>
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">Supabase RLS and private Storage policies scope every record to the signed-in owner.</p>
         </div>
       ) : null}
     </aside>
   );
 }
 
-function PetForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => Promise<void>; saving: boolean }) {
+function PetForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => Promise<boolean>; saving: boolean }) {
   const [species, setSpecies] = useState<(typeof speciesOptions)[number]>("Dog");
   const breeds = useMemo(() => breedsForSpecies(species), [species]);
   const formRef = useRef<HTMLFormElement>(null);
 
   async function handleSubmit(formData: FormData) {
-    await onSubmit(formData);
-    formRef.current?.reset();
-    setSpecies("Dog");
+    if (await onSubmit(formData)) {
+      formRef.current?.reset();
+      setSpecies("Dog");
+    }
   }
 
   return (
@@ -151,14 +160,14 @@ function PetForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => Promi
       </div>
       <form ref={formRef} action={handleSubmit} className="mt-6 grid gap-4 md:grid-cols-3">
         <Field label="Pet type">
-          <select name="species" value={species} onChange={(event) => setSpecies(event.target.value as (typeof speciesOptions)[number])} className={inputClass}>
+          <select name="species" value={species} onChange={(event) => setSpecies(event.target.value as (typeof speciesOptions)[number])} className={selectClass}>
             {speciesOptions.map((option) => <option key={option}>{option}</option>)}
           </select>
         </Field>
         <Field label="Name"><input className={inputClass} name="name" required placeholder="Luna" /></Field>
         {breeds.length ? (
           <Field label="Breed">
-            <select className={inputClass} name="breed">
+            <select className={selectClass} name="breed">
               <option value="">Unknown / mixed</option>
               {breeds.map((breed) => <option key={breed}>{breed}</option>)}
             </select>
@@ -171,7 +180,7 @@ function PetForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => Promi
         <Field label="Microchip / band ID"><input className={inputClass} name="microchipNumber" maxLength={32} /></Field>
         <Field label="Weight"><input className={inputClass} name="weight" inputMode="decimal" placeholder="12.4" /></Field>
         <Field label="Sex">
-          <select className={inputClass} name="sex">
+          <select className={selectClass} name="sex">
             <option>Unknown</option>
             <option>Female</option>
             <option>Male</option>
@@ -203,15 +212,16 @@ function DocumentVault({
   documents: DocumentRow[];
   selectedPetId: string;
   setSelectedPetId: (petId: string) => void;
-  onUpload: (formData: FormData) => Promise<void>;
+  onUpload: (formData: FormData) => Promise<boolean>;
   onDownload: (document: DocumentRow) => Promise<void>;
   saving: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
 
   async function handleUpload(formData: FormData) {
-    await onUpload(formData);
-    formRef.current?.reset();
+    if (await onUpload(formData)) {
+      formRef.current?.reset();
+    }
   }
 
   return (
@@ -224,7 +234,7 @@ function DocumentVault({
           <form ref={formRef} action={handleUpload} className="mt-6 rounded-[2rem] border-2 border-dashed border-blue-400/40 bg-blue-500/5 p-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Pet">
-                <select className={inputClass} name="petId" value={selectedPetId} onChange={(event) => setSelectedPetId(event.target.value)} required>
+                <select className={selectClass} name="petId" value={selectedPetId} onChange={(event) => setSelectedPetId(event.target.value)} required>
                   <option value="">Select a pet</option>
                   {pets.map((pet) => <option key={pet.id} value={pet.id}>{pet.name}</option>)}
                 </select>
@@ -236,19 +246,19 @@ function DocumentVault({
             <Button className="mt-5 w-full" disabled={saving || pets.length === 0}><UploadCloud className="h-4 w-4" /> {saving ? "Uploading..." : "Upload Documents"}</Button>
           </form>
         </div>
-        <div className="rounded-[2rem] bg-slate-950 p-5 text-white">
+        <div className="rounded-[2rem] border border-slate-200/80 bg-slate-950 p-5 text-white dark:border-white/10 dark:bg-white dark:text-slate-950">
           <p className="font-bold">Recent documents</p>
           <div className="mt-5 grid gap-3">
             {documents.length ? documents.slice(0, 6).map((document) => (
-              <button key={document.id} className="focus-ring flex items-start gap-3 rounded-2xl bg-white/10 p-3 text-left transition hover:bg-white/15" onClick={() => onDownload(document)}>
-                <FileText className="mt-1 h-4 w-4 text-blue-200" />
+              <button key={document.id} className="focus-ring flex items-start gap-3 rounded-2xl bg-white/10 p-3 text-left transition hover:bg-white/15 dark:bg-slate-950/5 dark:hover:bg-slate-950/10" onClick={() => onDownload(document)}>
+                <FileText className="mt-1 h-4 w-4 text-blue-200 dark:text-blue-500" />
                 <span>
                   <span className="block text-sm font-bold">{document.file_name}</span>
-                  <span className="text-xs text-slate-300">{formatDate(document.created_at.slice(0, 10))} · {document.status}</span>
+                  <span className="text-xs text-slate-300 dark:text-slate-600">{formatDate(document.created_at.slice(0, 10))} · {document.status}</span>
                 </span>
               </button>
             )) : (
-              <div className="rounded-2xl border border-dashed border-white/15 p-5 text-sm text-slate-300">No documents yet. Upload a vaccination certificate, lab result, or visit summary.</div>
+              <div className="rounded-2xl border border-dashed border-white/15 p-5 text-sm text-slate-300 dark:border-slate-300 dark:text-slate-600">No documents yet. Upload a vaccination certificate, lab result, or visit summary.</div>
             )}
           </div>
         </div>
@@ -269,14 +279,15 @@ function TimelineForm({
   documents: DocumentRow[];
   selectedPetId: string;
   setSelectedPetId: (petId: string) => void;
-  onSubmit: (formData: FormData) => Promise<void>;
+  onSubmit: (formData: FormData) => Promise<boolean>;
   saving: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
 
   async function handleSubmit(formData: FormData) {
-    await onSubmit(formData);
-    formRef.current?.reset();
+    if (await onSubmit(formData)) {
+      formRef.current?.reset();
+    }
   }
 
   const petDocuments = documents.filter((document) => !selectedPetId || document.pet_id === selectedPetId);
@@ -287,27 +298,27 @@ function TimelineForm({
       <h2 className="mt-3 text-2xl font-bold">Add a medical timeline record</h2>
       <form ref={formRef} action={handleSubmit} className="mt-6 grid gap-4 md:grid-cols-3">
         <Field label="Pet">
-          <select className={inputClass} name="petId" value={selectedPetId} onChange={(event) => setSelectedPetId(event.target.value)} required>
+          <select className={selectClass} name="petId" value={selectedPetId} onChange={(event) => setSelectedPetId(event.target.value)} required>
             <option value="">Select a pet</option>
             {pets.map((pet) => <option key={pet.id} value={pet.id}>{pet.name}</option>)}
           </select>
         </Field>
         <Field label="Date"><input className={inputClass} name="occurredOn" type="date" required /></Field>
         <Field label="Category">
-          <select className={inputClass} name="category">
+          <select className={selectClass} name="category">
             {categoryOptions.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
           </select>
         </Field>
         <Field label="Item name"><input className={inputClass} name="title" required placeholder="Rabies booster" /></Field>
         <Field label="Provider / clinic"><input className={inputClass} name="providerName" placeholder="North Star Vet" /></Field>
         <Field label="Linked document">
-          <select className={inputClass} name="documentId">
+          <select className={selectClass} name="documentId">
             <option value="">None</option>
             {petDocuments.map((document) => <option key={document.id} value={document.id}>{document.file_name}</option>)}
           </select>
         </Field>
         <Field label="Notes"><textarea className={`${inputClass} min-h-24 md:col-span-3`} name="notes" placeholder="Dose, batch number, results, next due date..." /></Field>
-        <Button className="md:col-span-3" disabled={saving || pets.length === 0}><ClipboardList className="h-4 w-4" /> {saving ? "Saving record..." : "Save Timeline Record"}</Button>
+        <Button className="md:col-span-3" disabled={saving || pets.length === 0} title={!pets.length ? "Add a pet profile before saving timeline records." : undefined}><ClipboardList className="h-4 w-4" /> {saving ? "Saving record..." : pets.length === 0 ? "Add a pet first" : "Save Timeline Record"}</Button>
       </form>
     </Card>
   );
@@ -363,6 +374,9 @@ export default function Home() {
   const ensureOwnerProfile = useCallback(async (client: Supabase, ownerId: string, email?: string | null) => {
     const { data, error } = await client.from("profiles").select("id").eq("id", ownerId).maybeSingle();
     if (error) {
+      if (isPermissionDenied(error)) {
+        return "ready";
+      }
       setNotice(`Profile check failed: ${supabaseMessage(error, "Could not verify your owner profile.")}`);
       return "failed";
     }
@@ -373,6 +387,9 @@ export default function Home() {
 
     const repaired = await client.from("profiles").upsert({ id: ownerId, full_name: email ?? null });
     if (repaired.error) {
+      if (isPermissionDenied(repaired.error)) {
+        return "ready";
+      }
       setNotice(`Profile repair failed: ${supabaseMessage(repaired.error, "Could not create your owner profile.")}`);
       return "failed";
     }
@@ -391,9 +408,9 @@ export default function Home() {
       ]);
 
       const failures = [
-        petsResult.error ? `pets: ${supabaseMessage(petsResult.error, "Could not load pets.")}` : null,
-        documentsResult.error ? `documents: ${supabaseMessage(documentsResult.error, "Could not load documents.")}` : null,
-        recordsResult.error ? `timeline: ${supabaseMessage(recordsResult.error, "Could not load timeline records.")}` : null
+        petsResult.error ? `pets: ${isPermissionDenied(petsResult.error) ? missingGrantMessage("pets") : supabaseMessage(petsResult.error, "Could not load pets.")}` : null,
+        documentsResult.error ? `documents: ${isPermissionDenied(documentsResult.error) ? missingGrantMessage("documents") : supabaseMessage(documentsResult.error, "Could not load documents.")}` : null,
+        recordsResult.error ? `timeline: ${isPermissionDenied(recordsResult.error) ? missingGrantMessage("timeline_records") : supabaseMessage(recordsResult.error, "Could not load timeline records.")}` : null
       ].filter(Boolean);
 
       if (petsResult.error) setPets([]);
@@ -470,25 +487,27 @@ export default function Home() {
   async function withOwner(action: (client: Supabase, ownerId: string) => Promise<void>) {
     if (!supabase || !session) {
       setNotice("Sign in before saving records.");
-      return;
+      return false;
     }
     setSaving(true);
     try {
       const profileStatus = await ensureOwnerProfile(supabase, session.user.id, session.user.email);
       if (profileStatus === "failed") {
-        return;
+        return false;
       }
       await action(supabase, session.user.id);
       await refreshData(supabase, session.user.id, null);
+      return true;
     } catch (error) {
       setNotice(supabaseMessage(error, "Something went wrong."));
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
   async function addPet(formData: FormData) {
-    await withOwner(async (client, ownerId) => {
+    return withOwner(async (client, ownerId) => {
       const payload: PetInsert = {
         owner_id: ownerId,
         name: String(formData.get("name") ?? "").trim(),
@@ -504,13 +523,13 @@ export default function Home() {
         care_notes: emptyToNull(formData.get("careNotes"))
       };
       const { error } = await client.from("pets").insert(payload);
-      if (error) throw new Error(`Pet save failed: ${supabaseMessage(error, "Could not save pet profile.")}`);
+      if (error) throw new Error(`Pet save failed: ${isPermissionDenied(error) ? missingGrantMessage("pets") : supabaseMessage(error, "Could not save pet profile.")}`);
       setNotice(`Pet save succeeded: ${payload.name} was added to your private pet profiles.`);
     });
   }
 
   async function uploadDocuments(formData: FormData) {
-    await withOwner(async (client, ownerId) => {
+    return withOwner(async (client, ownerId) => {
       const petId = String(formData.get("petId") ?? "");
       const files = formData.getAll("files").filter((file): file is File => file instanceof File && file.size > 0);
       if (!petId || files.length === 0) throw new Error("Choose a pet and at least one file.");
@@ -527,14 +546,14 @@ export default function Home() {
           mime_type: file.type || "application/octet-stream",
           status: "uploaded"
         });
-        if (insert.error) throw new Error(`Document save failed: ${supabaseMessage(insert.error, "Could not save document metadata.")}`);
+        if (insert.error) throw new Error(`Document save failed: ${isPermissionDenied(insert.error) ? missingGrantMessage("documents") : supabaseMessage(insert.error, "Could not save document metadata.")}`);
       }
       setNotice(`${files.length} document${files.length === 1 ? "" : "s"} uploaded to the private vault.`);
     });
   }
 
   async function addTimelineRecord(formData: FormData) {
-    await withOwner(async (client, ownerId) => {
+    return withOwner(async (client, ownerId) => {
       const petId = String(formData.get("petId") ?? "");
       if (!petId) throw new Error("Choose a pet for the timeline record.");
       const title = String(formData.get("title") ?? "").trim();
@@ -551,7 +570,7 @@ export default function Home() {
         provider_name: emptyToNull(formData.get("providerName")),
         notes: emptyToNull(formData.get("notes"))
       });
-      if (error) throw new Error(`Timeline save failed: ${supabaseMessage(error, "Could not save timeline record.")}`);
+      if (error) throw new Error(`Timeline save failed: ${isPermissionDenied(error) ? missingGrantMessage("timeline_records") : supabaseMessage(error, "Could not save timeline record.")}`);
       setNotice(`${title} was added to the medical timeline.`);
     });
   }
@@ -601,10 +620,10 @@ export default function Home() {
           <Card>
             <Badge><Sparkles className="mr-1 h-3 w-3" /> Setup Required</Badge>
             <h1 className="mt-4 text-4xl font-black">Connect Supabase to launch PetGalaxy</h1>
-            <p className="mt-3 text-slate-600 dark:text-slate-300">Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`, apply `supabase/schema.sql`, then restart the dev server.</p>
-          </Card>
-          <AuthPanel />
-        </div>
+          <p className="mt-3 text-slate-600 dark:text-slate-300">Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`, apply `supabase/schema.sql`, then restart the dev server.</p>
+        </Card>
+        <AuthPanel />
+      </div>
       </main>
     );
   }
@@ -633,24 +652,24 @@ export default function Home() {
       <div className="flex-1 p-4 sm:p-6 lg:p-8">
         <div className="mx-auto max-w-7xl space-y-6">
           <header className="flex flex-wrap items-center justify-between gap-4">
-            <button className="focus-ring rounded-2xl bg-slate-950 p-3 text-white lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Menu /></button>
+            <button className="focus-ring rounded-2xl bg-slate-950 p-3 text-white dark:bg-white dark:text-slate-950 lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Menu /></button>
             <div>
               <Badge><Sparkles className="mr-1 h-3 w-3" /> Owner Portal</Badge>
               <h1 className="mt-3 text-4xl font-black tracking-tight sm:text-6xl">Your pet records</h1>
               <p className="mt-3 max-w-3xl text-slate-600 dark:text-slate-300">{session.user.email} · {notice}</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => session && refreshData(supabase, session.user.id)} disabled={loadingData}><RefreshCw className="h-4 w-4" /> Refresh</Button>
-              <Button variant="outline" aria-label="Search coming soon"><Search className="h-4 w-4" /></Button>
+              <Button variant="outline" onClick={() => session && refreshData(supabase, session.user.id)} disabled={loadingData}><RefreshCw className="h-4 w-4" /> {loadingData ? "Refreshing..." : "Refresh"}</Button>
+              <Button variant="outline" aria-label="Search coming soon" title="Search is coming in a later release"><Search className="h-4 w-4" /></Button>
               <Button variant="outline" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label="Toggle theme">{theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</Button>
               <Button variant="secondary" onClick={signOut}><LogOut className="h-4 w-4" /> Sign Out</Button>
             </div>
           </header>
 
           <section className="grid gap-6 md:grid-cols-3">
-            <Card><Dog className="text-blue-500" /><p className="mt-4 text-3xl font-black">{pets.length}</p><p className="text-sm text-slate-500">Active pet profiles</p></Card>
-            <Card><FileText className="text-violet-500" /><p className="mt-4 text-3xl font-black">{documents.length}</p><p className="text-sm text-slate-500">Documents stored</p></Card>
-            <Card><Bell className="text-emerald-500" /><p className="mt-4 text-3xl font-black">{records.length}</p><p className="text-sm text-slate-500">Timeline records</p></Card>
+            <Card><Dog className="text-blue-500" /><p className="mt-4 text-3xl font-black">{pets.length}</p><p className="text-sm text-slate-500 dark:text-slate-400">Active pet profiles</p></Card>
+            <Card><FileText className="text-violet-500" /><p className="mt-4 text-3xl font-black">{documents.length}</p><p className="text-sm text-slate-500 dark:text-slate-400">Documents stored</p></Card>
+            <Card><Bell className="text-emerald-500" /><p className="mt-4 text-3xl font-black">{records.length}</p><p className="text-sm text-slate-500 dark:text-slate-400">Timeline records</p></Card>
           </section>
 
           <PetForm onSubmit={addPet} saving={saving} />
@@ -670,7 +689,7 @@ export default function Home() {
             )) : (
               <Card className="md:col-span-2 xl:col-span-3">
                 <h2 className="text-2xl font-bold">Start with a pet profile</h2>
-                <p className="mt-2 text-slate-600 dark:text-slate-300">PetGalaxy is empty until you add your first pet. Once a pet exists, documents and timeline records can attach to it.</p>
+                <p className="mt-2 text-slate-600 dark:text-slate-300">Add a pet profile first, then use the document vault and care timeline to build the record set.</p>
               </Card>
             )}
           </section>
@@ -686,7 +705,7 @@ export default function Home() {
                 <h2 className="mt-3 text-2xl font-bold">Clinic-ready PDF packets</h2>
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Choose any saved pet card above to export a PDF built from live profile and timeline data.</p>
               </div>
-              <Button className="self-center" disabled={!pets.length} onClick={() => pets[0] && exportPetHistory(pets[0])}><Download className="h-4 w-4" /> Export First Pet</Button>
+              <Button className="self-center" disabled={!pets.length} title={!pets.length ? "Add a pet profile before exporting a PDF packet." : undefined} onClick={() => pets[0] && exportPetHistory(pets[0])}><Download className="h-4 w-4" /> {pets.length ? "Export First Pet" : "Add a pet first"}</Button>
             </div>
           </Card>
 

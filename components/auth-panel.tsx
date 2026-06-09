@@ -16,6 +16,20 @@ function GoogleIcon() {
   );
 }
 
+function friendlyGoogleOAuthMessage(message: string) {
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("provider") &&
+    (lower.includes("not enabled") || lower.includes("disabled") || lower.includes("unsupported") || lower.includes("unavailable"))
+  ) {
+    return "Google sign-in is not enabled in this Supabase project yet. Enable the Google provider in Supabase Auth, then try again.";
+  }
+  if (lower.includes("google") && lower.includes("error")) {
+    return "Google sign-in could not start. Check that the Google provider is enabled in Supabase and try again.";
+  }
+  return message;
+}
+
 export function AuthPanel() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [loading, setLoading] = useState<string | null>(null);
@@ -73,7 +87,7 @@ export function AuthPanel() {
       return;
     }
     const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${location.origin}/auth/callback` } });
-    if (error) setMessage(error.message);
+    if (error) setMessage(friendlyGoogleOAuthMessage(error.message));
     setLoading(null);
   }
 
@@ -93,7 +107,7 @@ export function AuthPanel() {
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Email, password, and Google OAuth are powered by Supabase Auth.</p>
         </div>
 
-        <div className="grid grid-cols-2 rounded-2xl border border-slate-200/80 bg-white/50 p-1 dark:border-white/10 dark:bg-white/5" role="tablist" aria-label="Authentication mode">
+        <div className="grid grid-cols-2 rounded-2xl border border-slate-200/80 bg-slate-50 p-1 dark:border-white/10 dark:bg-white/5" role="tablist" aria-label="Authentication mode">
           <button
             className={`focus-ring rounded-xl px-4 py-2.5 text-sm font-bold transition ${mode === "signin" ? "bg-slate-950 text-white shadow-lg dark:bg-white dark:text-slate-950" : "text-slate-600 hover:bg-white/60 dark:text-slate-300 dark:hover:bg-white/10"}`}
             type="button"
