@@ -17,23 +17,50 @@ function GoogleIcon() {
 }
 
 export function AuthPanel() {
-  const [mode, setMode] = useState<"signin" | "signup" | "reset">("signin");
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [loading, setLoading] = useState<string | null>(null);
-  const [message, setMessage] = useState("Demo mode: add Supabase env vars to enable live auth.");
+  const [message, setMessage] = useState("Sign in or create an account to manage private pet records.");
 
   async function handleEmailAuth(formData: FormData) {
     setLoading(mode);
     const supabase = createSupabaseBrowserClient();
-    const email = String(formData.get("email"));
-    const password = String(formData.get("password"));
+    const email = String(formData.get("email") ?? "").trim();
+    const password = String(formData.get("password") ?? "");
+    const confirmPassword = String(formData.get("confirmPassword") ?? "");
+
+    if (mode === "signup" && password !== confirmPassword) {
+      setMessage("Passwords do not match.");
+      setLoading(null);
+      return;
+    }
+
     if (!supabase) {
       setMessage("Supabase credentials are not configured yet.");
       setLoading(null);
       return;
     }
-    const action = mode === "signup" ? supabase.auth.signUp({ email, password }) : mode === "reset" ? supabase.auth.resetPasswordForEmail(email) : supabase.auth.signInWithPassword({ email, password });
+    const action = mode === "signup" ? supabase.auth.signUp({ email, password }) : supabase.auth.signInWithPassword({ email, password });
     const { error } = await action;
-    setMessage(error?.message ?? "Check your inbox or session state to continue.");
+    setMessage(error?.message ?? (mode === "signup" ? "Check your inbox to confirm your account." : "Signed in successfully."));
+    setLoading(null);
+  }
+
+  async function handlePasswordReset(formData: FormData) {
+    setLoading("reset");
+    const supabase = createSupabaseBrowserClient();
+    const email = String(formData.get("email") ?? "").trim();
+    if (!email) {
+      setMessage("Enter your email first, then choose Forgot Password.");
+      setLoading(null);
+      return;
+    }
+    if (!supabase) {
+      setMessage("Supabase credentials are not configured yet.");
+      setLoading(null);
+      return;
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    setMessage(error?.message ?? "Password reset email sent.");
     setLoading(null);
   }
 
@@ -50,6 +77,11 @@ export function AuthPanel() {
     setLoading(null);
   }
 
+  function switchMode(nextMode: "signin" | "signup") {
+    setMode(nextMode);
+    setMessage(nextMode === "signin" ? "Sign in to continue to your private records." : "Create an account to start your PetGalaxy vault.");
+  }
+
   return (
     <Card className="relative overflow-hidden">
       <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-violet-500/20 blur-3xl" />
@@ -57,22 +89,43 @@ export function AuthPanel() {
         <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-violet-600 text-white"><Sparkles /></div>
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-blue-600 dark:text-blue-300">Secure portal</p>
-          <h2 className="mt-2 text-3xl font-bold">{mode === "signup" ? "Create your PetGalaxy" : mode === "reset" ? "Reset password" : "Welcome back"}</h2>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Email, password, and Google OAuth are wired through Supabase Auth with production-ready loading states.</p>
+          <h2 className="mt-2 text-3xl font-bold">{mode === "signup" ? "Create your PetGalaxy" : "Welcome back"}</h2>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Email, password, and Google OAuth are powered by Supabase Auth.</p>
         </div>
+
+        <div className="grid grid-cols-2 rounded-2xl border border-slate-200/80 bg-white/50 p-1 dark:border-white/10 dark:bg-white/5" role="tablist" aria-label="Authentication mode">
+          <button
+            className={`focus-ring rounded-xl px-4 py-2.5 text-sm font-bold transition ${mode === "signin" ? "bg-slate-950 text-white shadow-lg dark:bg-white dark:text-slate-950" : "text-slate-600 hover:bg-white/60 dark:text-slate-300 dark:hover:bg-white/10"}`}
+            type="button"
+            role="tab"
+            aria-selected={mode === "signin"}
+            onClick={() => switchMode("signin")}
+          >
+            Sign In
+          </button>
+          <button
+            className={`focus-ring rounded-xl px-4 py-2.5 text-sm font-bold transition ${mode === "signup" ? "bg-slate-950 text-white shadow-lg dark:bg-white dark:text-slate-950" : "text-slate-600 hover:bg-white/60 dark:text-slate-300 dark:hover:bg-white/10"}`}
+            type="button"
+            role="tab"
+            aria-selected={mode === "signup"}
+            onClick={() => switchMode("signup")}
+          >
+            Sign Up
+          </button>
+        </div>
+
         <form action={handleEmailAuth} className="space-y-4">
           <Field label="Email"><div className="relative"><Mail className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" /><input className={`${inputClass} pl-11`} name="email" type="email" required placeholder="you@example.com" /></div></Field>
-          {mode !== "reset" ? <Field label="Password"><div className="relative"><Lock className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" /><input className={`${inputClass} pl-11`} name="password" type="password" required minLength={8} placeholder="••••••••" /></div></Field> : null}
-          <Button className="w-full" disabled={Boolean(loading)}>{loading === mode ? "Please wait..." : mode === "signup" ? "Sign Up" : mode === "reset" ? "Send reset link" : "Sign In"}</Button>
+          <Field label="Password"><div className="relative"><Lock className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" /><input className={`${inputClass} pl-11`} name="password" type="password" required minLength={8} placeholder="••••••••" /></div></Field>
+          {mode === "signup" ? <Field label="Confirm Password"><div className="relative"><Lock className="absolute left-4 top-3.5 h-4 w-4 text-slate-400" /><input className={`${inputClass} pl-11`} name="confirmPassword" type="password" required minLength={8} placeholder="••••••••" /></div></Field> : null}
+          <Button className="w-full" disabled={Boolean(loading)}>{loading === mode ? "Please wait..." : mode === "signup" ? "Create Account" : "Sign In"}</Button>
+          {mode === "signin" ? (
+            <button className="focus-ring text-sm font-semibold text-violet-600 dark:text-violet-300" formAction={handlePasswordReset} disabled={Boolean(loading)} type="submit">
+              {loading === "reset" ? "Sending reset email..." : "Forgot Password"}
+            </button>
+          ) : null}
         </form>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Button variant="outline" onClick={handleGoogle} disabled={Boolean(loading)}><GoogleIcon /> Sign In with Google</Button>
-          <Button variant="outline" onClick={handleGoogle} disabled={Boolean(loading)}><GoogleIcon /> Sign Up with Google</Button>
-        </div>
-        <div className="flex flex-wrap gap-3 text-sm text-slate-500 dark:text-slate-400">
-          <button className="font-semibold text-blue-600 dark:text-blue-300" onClick={() => setMode(mode === "signup" ? "signin" : "signup")}>{mode === "signup" ? "Have an account? Sign in" : "New here? Sign up"}</button>
-          <button className="font-semibold text-violet-600 dark:text-violet-300" onClick={() => setMode("reset")}>Forgot password?</button>
-        </div>
+        <Button className="w-full" variant="outline" onClick={handleGoogle} disabled={Boolean(loading)}><GoogleIcon /> {mode === "signup" ? "Sign up with Google" : "Sign in with Google"}</Button>
         <p className="rounded-2xl bg-slate-950/5 p-3 text-xs text-slate-600 dark:bg-white/10 dark:text-slate-300">{message}</p>
       </div>
     </Card>

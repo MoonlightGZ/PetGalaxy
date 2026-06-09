@@ -47,7 +47,7 @@ create table public.documents (
   owner_id uuid not null references public.profiles(id) on delete cascade,
   pet_id uuid references public.pets(id) on delete set null,
   file_name text not null,
-  storage_path text not null,
+  storage_path text not null check (storage_path like owner_id::text || '/%'),
   mime_type text not null,
   status public.document_status not null default 'uploaded',
   extracted_json jsonb not null default '{}'::jsonb,
@@ -92,3 +92,52 @@ create policy "timeline is owner scoped" on public.timeline_records for all usin
 create index on public.pets(owner_id);
 create index on public.documents(owner_id, status);
 create index on public.timeline_records(owner_id, pet_id, occurred_on desc);
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, full_name, avatar_url)
+  values (new.id, new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'avatar_url')
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'pet-documents',
+  'pet-documents',
+  false,
+  10485760,
+  array['application/pdf', 'image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+create policy "pet documents can be read by owner"
+on storage.objects for select
+using (bucket_id = 'pet-documents' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "pet documents can be uploaded by owner"
+on storage.objects for insert
+with check (bucket_id = 'pet-documents' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "pet documents can be updated by owner"
+on storage.objects for update
+using (bucket_id = 'pet-documents' and (storage.foldername(name))[1] = auth.uid()::text)
+with check (bucket_id = 'pet-documents' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "pet documents can be deleted by owner"
+on storage.objects for delete
+using (bucket_id = 'pet-documents' and (storage.foldername(name))[1] = auth.uid()::text);

@@ -5,12 +5,15 @@ type ExportPet = {
   species: string;
   breed?: string;
   microchipNumber?: string;
+  dateOfBirth?: string;
+  weight?: string;
 };
 
 type ExportTimelineRecord = {
   date: string;
   category: string;
   title: string;
+  provider?: string;
   notes?: string;
 };
 
@@ -34,8 +37,10 @@ export function generateMedicalHistoryPdf(pet: ExportPet, records: ExportTimelin
   doc.setFontSize(11);
   doc.text(`${pet.species}${pet.breed ? ` · ${pet.breed}` : ""}`, margin, y + 20);
   if (pet.microchipNumber) doc.text(`Microchip: ${pet.microchipNumber}`, margin, y + 38);
+  if (pet.dateOfBirth) doc.text(`Date of birth: ${pet.dateOfBirth}`, margin, y + 56);
+  if (pet.weight) doc.text(`Weight: ${pet.weight}`, 320, y + 56);
 
-  y += 82;
+  y += 96;
   doc.setFontSize(14);
   doc.text("Chronological Timeline", margin, y);
   y += 24;
@@ -51,8 +56,9 @@ export function generateMedicalHistoryPdf(pet: ExportPet, records: ExportTimelin
     doc.setTextColor(15, 23, 42);
     doc.setFontSize(13);
     doc.text(record.title, margin, y + 18);
-    if (record.notes) doc.text(doc.splitTextToSize(record.notes, 500), margin, y + 36);
-    y += record.notes ? 72 : 54;
+    const detailLines = [record.provider ? `Provider: ${record.provider}` : null, record.notes].filter(Boolean).join(" · ");
+    if (detailLines) doc.text(doc.splitTextToSize(detailLines, 500), margin, y + 36);
+    y += detailLines ? 78 : 54;
     if (index < records.length - 1) {
       doc.setDrawColor(226, 232, 240);
       doc.line(margin, y - 18, 564, y - 18);
