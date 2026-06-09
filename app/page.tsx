@@ -31,9 +31,9 @@ import {
 import { AuthPanel } from "@/components/auth-panel";
 import { Badge, Button, Card, Field, inputClass } from "@/components/ui";
 import { breedsForSpecies } from "@/lib/breeds";
+import { speciesOptions } from "@/lib/constants";
 import type { Database } from "@/lib/database.types";
 import { generateMedicalHistoryPdf } from "@/lib/pdf-export";
-import { speciesOptions } from "@/lib/schemas";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 
 type Supabase = NonNullable<ReturnType<typeof createSupabaseBrowserClient>>;

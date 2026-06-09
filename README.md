@@ -34,7 +34,3 @@ npm run typecheck
 npm run build
 npm audit
 ```
-
-## Static Alpha
-
-`index.html`, `styles.css`, and `script.js` are retained as a static alpha/reference surface. The launch product is the Next/Supabase app.
